@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -59,6 +60,45 @@ fun DashboardScreen(
     val stocks by viewModel.stockList.collectAsState()
     val history by viewModel.portfolioHistory.collectAsState()
     val lastSync by viewModel.lastSyncTime.collectAsState()
+
+    var holdingsSearchQuery by remember { mutableStateOf("") }
+    var holdingsSortBy by remember { mutableStateOf("Value") }
+    var holdingsSortOrderDesc by remember { mutableStateOf(true) }
+    var holdingsFilterPerformance by remember { mutableStateOf("All") }
+    var holdingsFilterExpanded by remember { mutableStateOf(false) }
+
+    val filteredHoldings = remember(holdings, holdingsSearchQuery, holdingsSortBy, holdingsSortOrderDesc, holdingsFilterPerformance) {
+        var result = holdings.filter {
+            it.ticker.contains(holdingsSearchQuery, ignoreCase = true) ||
+                    it.name.contains(holdingsSearchQuery, ignoreCase = true)
+        }
+
+        result = when (holdingsFilterPerformance) {
+            "Profitable" -> result.filter { it.gainLoss > 0 }
+            "In the Red" -> result.filter { it.gainLoss < 0 }
+            else -> result
+        }
+
+        when (holdingsSortBy) {
+            "Value" -> {
+                if (holdingsSortOrderDesc) result.sortedByDescending { it.marketValue }
+                else result.sortedBy { it.marketValue }
+            }
+            "Gain/Loss" -> {
+                if (holdingsSortOrderDesc) result.sortedByDescending { it.gainLossPercent }
+                else result.sortedBy { it.gainLossPercent }
+            }
+            "Ticker" -> {
+                if (holdingsSortOrderDesc) result.sortedByDescending { it.ticker }
+                else result.sortedBy { it.ticker }
+            }
+            "Shares" -> {
+                if (holdingsSortOrderDesc) result.sortedByDescending { it.shares }
+                else result.sortedBy { it.shares }
+            }
+            else -> result
+        }
+    }
 
     var totalValue = 0.0
     var totalCost = 0.0
@@ -258,8 +298,6 @@ fun DashboardScreen(
             }
         }
 
-
-
         // Portfolio History Chart Card
         if (history.isNotEmpty()) {
             item {
@@ -320,24 +358,146 @@ fun DashboardScreen(
             }
         }
 
-        // Section Title
+        // Current Holdings Header with Search & Filter Toggle
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    text = "Current Holdings",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = SlateTextPrimary
-                )
-                Text(
-                    text = "${holdings.size} Asset(s)",
-                    fontSize = 12.sp,
-                    color = SlateTextSecondary
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Current Holdings",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextPrimary
+                    )
+                    
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "${filteredHoldings.size} of ${holdings.size}",
+                            fontSize = 12.sp,
+                            color = SlateTextSecondary
+                        )
+                        IconButton(
+                            onClick = { holdingsFilterExpanded = !holdingsFilterExpanded },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FilterList,
+                                contentDescription = "Filter & Sort",
+                                tint = if (holdingsFilterExpanded || holdingsFilterPerformance != "All" || holdingsSortBy != "Value" || holdingsSearchQuery.isNotEmpty()) GrowBlue else SlateTextSecondary
+                            )
+                        }
+                    }
+                }
+
+                AnimatedVisibility(visible = holdingsFilterExpanded || holdingsSearchQuery.isNotEmpty()) {
+                    OutlinedTextField(
+                        value = holdingsSearchQuery,
+                        onValueChange = { holdingsSearchQuery = it },
+                        placeholder = { Text("Search by symbol or name...", color = SlateTextSecondary, fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = SlateTextSecondary, modifier = Modifier.size(20.dp)) },
+                        trailingIcon = {
+                            if (holdingsSearchQuery.isNotEmpty()) {
+                                IconButton(onClick = { holdingsSearchQuery = "" }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear", tint = SlateTextSecondary, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = SlateSurface,
+                            unfocusedContainerColor = SlateSurface,
+                            focusedBorderColor = GrowBlue,
+                            unfocusedBorderColor = SlateBorder,
+                            focusedTextColor = SlateTextPrimary,
+                            unfocusedTextColor = SlateTextPrimary
+                        )
+                    )
+                }
+
+                AnimatedVisibility(visible = holdingsFilterExpanded) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = SlateSurface),
+                        border = BorderStroke(1.dp, SlateBorder),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            // Sort by Section
+                            Text(
+                                text = "SORT BY",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SlateTextSecondary,
+                                letterSpacing = 1.sp
+                            )
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val sortOptions = listOf("Value", "Gain/Loss", "Ticker", "Shares")
+                                items(sortOptions) { option ->
+                                    val selected = holdingsSortBy == option
+                                    CustomFilterChip(
+                                        selected = selected,
+                                        label = option,
+                                        onClick = {
+                                            if (selected) {
+                                                holdingsSortOrderDesc = !holdingsSortOrderDesc
+                                            } else {
+                                                holdingsSortBy = option
+                                                holdingsSortOrderDesc = true
+                                            }
+                                        },
+                                        arrowDirectionDesc = if (selected) holdingsSortOrderDesc else null
+                                    )
+                                }
+                            }
+
+                            HorizontalDivider(color = SlateBorder.copy(alpha = 0.6f), thickness = 0.8.dp)
+
+                            // Performance Section
+                            Text(
+                                text = "PERFORMANCE",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SlateTextSecondary,
+                                letterSpacing = 1.sp
+                            )
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val performanceOptions = listOf("All", "Profitable", "In the Red")
+                                items(performanceOptions) { option ->
+                                    val selected = holdingsFilterPerformance == option
+                                    CustomFilterChip(
+                                        selected = selected,
+                                        label = option,
+                                        onClick = { holdingsFilterPerformance = option }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -373,9 +533,35 @@ fun DashboardScreen(
                     }
                 }
             }
+        } else if (filteredHoldings.isEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 40.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "Not found",
+                            tint = SlateTextSecondary,
+                            modifier = Modifier.size(40.dp)
+                        )
+                        Text(
+                            text = "No holding matches filter/search",
+                            fontSize = 14.sp,
+                            color = SlateTextSecondary
+                        )
+                    }
+                }
+            }
         } else {
             val stocksMap = stocks.associateBy { it.ticker.uppercase().trim() }
-            items(holdings) { holding ->
+            items(filteredHoldings) { holding ->
                 val matchingStock = stocksMap[holding.ticker.uppercase().trim()]
                 HoldingRowItem(holding = holding, stockItem = matchingStock)
             }
@@ -594,10 +780,59 @@ fun StockListScreen(
     val stocks by viewModel.stockList.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
 
-    val filteredStocks = stocks.filter {
-        it.ticker.contains(searchQuery, ignoreCase = true) ||
-                it.name.contains(searchQuery, ignoreCase = true) ||
-                it.sector.contains(searchQuery, ignoreCase = true)
+    val sectors = remember(stocks) {
+        listOf("All") + stocks.map { it.sector.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
+    }
+
+    var sortBy by remember { mutableStateOf("Ticker") }
+    var sortOrderDesc by remember { mutableStateOf(false) }
+    var performanceFilter by remember { mutableStateOf("All") }
+    var sectorFilter by remember { mutableStateOf("All") }
+    var priceFilter by remember { mutableStateOf("All") }
+    var filterExpanded by remember { mutableStateOf(false) }
+
+    val filteredStocks = remember(stocks, searchQuery, sortBy, sortOrderDesc, performanceFilter, sectorFilter, priceFilter) {
+        var result = stocks.filter {
+            it.ticker.contains(searchQuery, ignoreCase = true) ||
+                    it.name.contains(searchQuery, ignoreCase = true)
+        }
+
+        if (sectorFilter != "All") {
+            result = result.filter { it.sector.trim().equals(sectorFilter.trim(), ignoreCase = true) }
+        }
+
+        result = when (performanceFilter) {
+            "Gainers" -> result.filter { it.changePercent > 0 }
+            "Losers" -> result.filter { it.changePercent < 0 }
+            else -> result
+        }
+
+        result = when (priceFilter) {
+            "Under Rs 100" -> result.filter { it.price < 100.0 }
+            "Rs 100 - Rs 500" -> result.filter { it.price in 100.0..500.0 }
+            "Above Rs 500" -> result.filter { it.price > 500.0 }
+            else -> result
+        }
+
+        when (sortBy) {
+            "Ticker" -> {
+                if (sortOrderDesc) result.sortedByDescending { it.ticker }
+                else result.sortedBy { it.ticker }
+            }
+            "Price" -> {
+                if (sortOrderDesc) result.sortedByDescending { it.price }
+                else result.sortedBy { it.price }
+            }
+            "% Change" -> {
+                if (sortOrderDesc) result.sortedByDescending { it.changePercent }
+                else result.sortedBy { it.changePercent }
+            }
+            "Volume" -> {
+                if (sortOrderDesc) result.sortedByDescending { it.volume }
+                else result.sortedBy { it.volume }
+            }
+            else -> result
+        }
     }
 
     Column(
@@ -605,34 +840,177 @@ fun StockListScreen(
             .fillMaxSize()
             .padding(horizontal = 16.dp)
     ) {
-        // Search Box
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            placeholder = { Text("Search by symbol, name, or sector...", color = SlateTextSecondary) },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = SlateTextSecondary) },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery = "" }) {
-                        Icon(Icons.Default.Clear, contentDescription = "Clear", tint = SlateTextSecondary)
-                    }
-                }
-            },
+        // Search Box and Filter Toggle Row
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 8.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = SlateSurface,
-                unfocusedContainerColor = SlateSurface,
-                focusedBorderColor = GrowBlue,
-                unfocusedBorderColor = SlateBorder,
-                focusedTextColor = SlateTextPrimary,
-                unfocusedTextColor = SlateTextPrimary
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Search by symbol, name...", color = SlateTextSecondary, fontSize = 13.sp) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = SlateTextSecondary, modifier = Modifier.size(20.dp)) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear", tint = SlateTextSecondary, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = SlateSurface,
+                    unfocusedContainerColor = SlateSurface,
+                    focusedBorderColor = GrowBlue,
+                    unfocusedBorderColor = SlateBorder,
+                    focusedTextColor = SlateTextPrimary,
+                    unfocusedTextColor = SlateTextPrimary
+                )
             )
-        )
 
-        Spacer(modifier = Modifier.height(8.dp))
+            IconButton(
+                onClick = { filterExpanded = !filterExpanded },
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (filterExpanded) GrowBlue.copy(alpha = 0.15f) else SlateSurface)
+                    .border(1.dp, if (filterExpanded) GrowBlue else SlateBorder, RoundedCornerShape(12.dp))
+            ) {
+                Icon(
+                    imageVector = Icons.Default.FilterList,
+                    contentDescription = "Filters",
+                    tint = if (filterExpanded || sectorFilter != "All" || performanceFilter != "All" || priceFilter != "All" || sortBy != "Ticker") GrowBlue else SlateTextSecondary
+                )
+            }
+        }
+
+        AnimatedVisibility(visible = filterExpanded) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                colors = CardDefaults.cardColors(containerColor = SlateSurface),
+                border = BorderStroke(1.dp, SlateBorder),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Sort by
+                    Text(
+                        text = "SORT BY",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextSecondary,
+                        letterSpacing = 1.sp
+                    )
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val sortOptions = listOf("Ticker", "Price", "% Change", "Volume")
+                        items(sortOptions) { option ->
+                            val selected = sortBy == option
+                            CustomFilterChip(
+                                selected = selected,
+                                label = option,
+                                onClick = {
+                                    if (selected) {
+                                        sortOrderDesc = !sortOrderDesc
+                                    } else {
+                                        sortBy = option
+                                        sortOrderDesc = (option != "Ticker") // Default desc for numeric, asc for alpha
+                                    }
+                                },
+                                arrowDirectionDesc = if (selected) sortOrderDesc else null
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = SlateBorder.copy(alpha = 0.6f), thickness = 0.8.dp)
+
+                    // Sector Filter
+                    Text(
+                        text = "SECTOR",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextSecondary,
+                        letterSpacing = 1.sp
+                    )
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(sectors) { sector ->
+                            val selected = sectorFilter == sector
+                            CustomFilterChip(
+                                selected = selected,
+                                label = sector,
+                                onClick = { sectorFilter = sector }
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = SlateBorder.copy(alpha = 0.6f), thickness = 0.8.dp)
+
+                    // Performance Filter
+                    Text(
+                        text = "DAILY PERFORMANCE",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextSecondary,
+                        letterSpacing = 1.sp
+                    )
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val perfOptions = listOf("All", "Gainers", "Losers")
+                        items(perfOptions) { option ->
+                            val selected = performanceFilter == option
+                            CustomFilterChip(
+                                selected = selected,
+                                label = option,
+                                onClick = { performanceFilter = option }
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = SlateBorder.copy(alpha = 0.6f), thickness = 0.8.dp)
+
+                    // Price Filter
+                    Text(
+                        text = "PRICE RANGE",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextSecondary,
+                        letterSpacing = 1.sp
+                    )
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val priceOptions = listOf("All", "Under Rs 100", "Rs 100 - Rs 500", "Above Rs 500")
+                        items(priceOptions) { option ->
+                            val selected = priceFilter == option
+                            CustomFilterChip(
+                                selected = selected,
+                                label = option,
+                                onClick = { priceFilter = option }
+                            )
+                        }
+                    }
+                }
+            }
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -672,7 +1050,7 @@ fun StockListScreen(
                         modifier = Modifier.size(40.dp)
                     )
                     Text(
-                        text = "No stock matches search",
+                        text = "No stock matches filters",
                         fontSize = 14.sp,
                         color = SlateTextSecondary
                     )
@@ -789,58 +1167,264 @@ fun WatchListScreen(
 ) {
     val watchlist by viewModel.watchList.collectAsState()
 
-    LazyColumn(
+    var searchQuery by remember { mutableStateOf("") }
+    var sortBy by remember { mutableStateOf("Ticker") }
+    var sortOrderDesc by remember { mutableStateOf(false) }
+    var statusFilter by remember { mutableStateOf("All") }
+    var filterExpanded by remember { mutableStateOf(false) }
+
+    val filteredWatchlist = remember(watchlist, searchQuery, sortBy, sortOrderDesc, statusFilter) {
+        var result = watchlist.filter {
+            it.ticker.contains(searchQuery, ignoreCase = true) ||
+                    it.name.contains(searchQuery, ignoreCase = true)
+        }
+
+        result = when (statusFilter) {
+            "Below Target" -> result.filter { it.currentPrice <= it.targetPrice }
+            "Above Target" -> result.filter { it.currentPrice > it.targetPrice }
+            "Near Target (<= 5%)" -> result.filter {
+                if (it.currentPrice > 0.0) {
+                    val gap = (it.targetPrice - it.currentPrice) / it.currentPrice
+                    Math.abs(gap) <= 0.05
+                } else false
+            }
+            else -> result
+        }
+
+        when (sortBy) {
+            "Ticker" -> {
+                if (sortOrderDesc) result.sortedByDescending { it.ticker }
+                else result.sortedBy { it.ticker }
+            }
+            "Target Price" -> {
+                if (sortOrderDesc) result.sortedByDescending { it.targetPrice }
+                else result.sortedBy { it.targetPrice }
+            }
+            "Distance %" -> {
+                val selector: (WatchStock) -> Double = {
+                    if (it.currentPrice > 0.0) {
+                        (it.targetPrice - it.currentPrice) / it.currentPrice
+                    } else 0.0
+                }
+                if (sortOrderDesc) result.sortedByDescending(selector)
+                else result.sortedBy(selector)
+            }
+            else -> result
+        }
+    }
+
+    Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(bottom = 24.dp)
+            .padding(horizontal = 16.dp)
     ) {
-        item {
+        // Title Row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
                 text = "My Stock Watchlist",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                color = SlateTextPrimary,
-                modifier = Modifier.padding(vertical = 8.dp)
+                color = SlateTextPrimary
+            )
+            Text(
+                text = "${filteredWatchlist.size} stock(s)",
+                fontSize = 12.sp,
+                color = SlateTextSecondary
             )
         }
 
-        if (watchlist.isEmpty()) {
-            item {
-                Box(
+        // Search Bar & Filter Toggle
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Search watchlist symbols...", color = SlateTextSecondary, fontSize = 13.sp) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = SlateTextSecondary, modifier = Modifier.size(20.dp)) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear", tint = SlateTextSecondary, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = SlateSurface,
+                    unfocusedContainerColor = SlateSurface,
+                    focusedBorderColor = GrowBlue,
+                    unfocusedBorderColor = SlateBorder,
+                    focusedTextColor = SlateTextPrimary,
+                    unfocusedTextColor = SlateTextPrimary
+                )
+            )
+
+            IconButton(
+                onClick = { filterExpanded = !filterExpanded },
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (filterExpanded) GrowBlue.copy(alpha = 0.15f) else SlateSurface)
+                    .border(1.dp, if (filterExpanded) GrowBlue else SlateBorder, RoundedCornerShape(12.dp))
+            ) {
+                Icon(
+                    imageVector = Icons.Default.FilterList,
+                    contentDescription = "Filters",
+                    tint = if (filterExpanded || statusFilter != "All" || sortBy != "Ticker") GrowBlue else SlateTextSecondary
+                )
+            }
+        }
+
+        AnimatedVisibility(visible = filterExpanded) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                colors = CardDefaults.cardColors(containerColor = SlateSurface),
+                border = BorderStroke(1.dp, SlateBorder),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 50.dp),
-                    contentAlignment = Alignment.Center
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    // Sort By
+                    Text(
+                        text = "SORT BY",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextSecondary,
+                        letterSpacing = 1.sp
+                    )
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.StarBorder,
-                            contentDescription = "Empty Stars",
-                            tint = SlateTextSecondary,
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Text(
-                            text = "Watchlist is empty",
-                            fontSize = 14.sp,
-                            color = SlateTextSecondary
-                        )
-                        Text(
-                            text = "Add symbols to your 'watch list' sheet to track targets.",
-                            fontSize = 12.sp,
-                            color = SlateTextSecondary,
-                            textAlign = TextAlign.Center
-                        )
+                        val sortOptions = listOf("Ticker", "Target Price", "Distance %")
+                        items(sortOptions) { option ->
+                            val selected = sortBy == option
+                            CustomFilterChip(
+                                selected = selected,
+                                label = option,
+                                onClick = {
+                                    if (selected) {
+                                        sortOrderDesc = !sortOrderDesc
+                                    } else {
+                                        sortBy = option
+                                        sortOrderDesc = (option != "Ticker")
+                                    }
+                                },
+                                arrowDirectionDesc = if (selected) sortOrderDesc else null
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = SlateBorder.copy(alpha = 0.6f), thickness = 0.8.dp)
+
+                    // Target Proximity Filter
+                    Text(
+                        text = "TARGET PROXIMITY",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextSecondary,
+                        letterSpacing = 1.sp
+                    )
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val proximityOptions = listOf("All", "Below Target", "Above Target", "Near Target (<= 5%)")
+                        items(proximityOptions) { option ->
+                            val selected = statusFilter == option
+                            CustomFilterChip(
+                                selected = selected,
+                                label = option,
+                                onClick = { statusFilter = option }
+                            )
+                        }
                     }
                 }
             }
+        }
+
+        if (watchlist.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.StarBorder,
+                        contentDescription = "Empty Stars",
+                        tint = SlateTextSecondary,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Text(
+                        text = "Watchlist is empty",
+                        fontSize = 14.sp,
+                        color = SlateTextSecondary
+                    )
+                    Text(
+                        text = "Add symbols to your 'watch list' sheet to track targets.",
+                        fontSize = 12.sp,
+                        color = SlateTextSecondary,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        } else if (filteredWatchlist.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "Not found",
+                        tint = SlateTextSecondary,
+                        modifier = Modifier.size(40.dp)
+                    )
+                    Text(
+                        text = "No watchlist stock matches filters",
+                        fontSize = 14.sp,
+                        color = SlateTextSecondary
+                    )
+                }
+            }
         } else {
-            items(watchlist) { item ->
-                WatchRowItem(watch = item)
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(bottom = 24.dp)
+            ) {
+                items(filteredWatchlist) { item ->
+                    WatchRowItem(watch = item)
+                }
             }
         }
     }
@@ -1808,5 +2392,43 @@ private fun formatVolume(volume: Long): String {
         volume >= 1_000_000 -> String.format("%.1fM", volume.toDouble() / 1_000_000)
         volume >= 1_000 -> String.format("%.1fK", volume.toDouble() / 1_000)
         else -> volume.toString()
+    }
+}
+
+@Composable
+fun CustomFilterChip(
+    selected: Boolean,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    arrowDirectionDesc: Boolean? = null
+) {
+    Surface(
+        onClick = onClick,
+        color = if (selected) GrowBlue.copy(alpha = 0.15f) else SlateSurface,
+        border = BorderStroke(1.dp, if (selected) GrowBlue else SlateBorder),
+        shape = RoundedCornerShape(8.dp),
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = label,
+                fontSize = 12.sp,
+                color = if (selected) GrowBlue else SlateTextSecondary,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+            )
+            if (arrowDirectionDesc != null) {
+                Icon(
+                    imageVector = if (arrowDirectionDesc) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
+                    contentDescription = null,
+                    modifier = Modifier.size(12.dp),
+                    tint = GrowBlue
+                )
+            }
+        }
     }
 }
