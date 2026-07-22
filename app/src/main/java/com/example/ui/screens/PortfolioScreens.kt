@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -44,6 +45,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.Scope
@@ -62,6 +66,10 @@ import com.example.ui.PortfolioViewModel
 import com.example.ui.SyncState
 import com.example.ui.theme.*
 import java.text.DecimalFormat
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Calendar
+import java.util.Locale
 
 private val moneyFormat = DecimalFormat("Rs #,##0.00")
 private val changeFormat = DecimalFormat("+0.00;-0.00")
@@ -88,12 +96,17 @@ fun DashboardScreen(
     val nepseChange by viewModel.nepseIndexChange.collectAsState()
     val nepsePercent by viewModel.nepseIndexPercent.collectAsState()
     val isNepseLoading by viewModel.isNepseLoading.collectAsState()
+    val nepseStatus by viewModel.nepseStatus.collectAsState()
+    val nepseDateTime by viewModel.nepseDateTime.collectAsState()
+    val syncState by viewModel.syncState.collectAsState()
+    var isRefreshing by remember { mutableStateOf(false) }
 
     var showBalances by remember { mutableStateOf(false) }
     var showOtherIndices by remember { mutableStateOf(false) }
 
     var holdingsSearchQuery by remember { mutableStateOf("") }
     var hoveredPoint by remember { mutableStateOf<PortfolioHistory?>(null) }
+    var selectedPeriod by remember { mutableStateOf("1M") }
     var holdingsSortBy by remember { mutableStateOf("Today's Diff") }
     var holdingsSortOrderDesc by remember { mutableStateOf(true) }
     var holdingsFilterPerformance by remember { mutableStateOf("All") }
@@ -172,8 +185,21 @@ fun DashboardScreen(
         0.0
     }
 
+    LaunchedEffect(syncState) {
+        if (syncState !is SyncState.Syncing) isRefreshing = false
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = {
+            isRefreshing = true
+            viewModel.refreshFromSheets()
+        },
+        modifier = modifier.fillMaxSize()
+    ) {
     LazyColumn(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -198,48 +224,82 @@ fun DashboardScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(GrowBlue.copy(alpha = 0.15f))
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(GrowBlue.copy(alpha = 0.15f))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "NEPSE",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = GrowBlue
+                                        )
+                                        Icon(
+                                            imageVector = Icons.Default.Timeline,
+                                            contentDescription = "View Chart",
+                                            tint = GrowBlue,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    }
+                                }
+
+                                if (isNepseLoading && nepseVal == null) {
                                     Text(
-                                        text = "NEPSE",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = GrowBlue
+                                        text = "Loading index...",
+                                        fontSize = 12.sp,
+                                        color = SlateTextSecondary
                                     )
-                                    Icon(
-                                        imageVector = Icons.Default.Timeline,
-                                        contentDescription = "View Chart",
-                                        tint = GrowBlue,
-                                        modifier = Modifier.size(12.dp)
+                                } else {
+                                    Text(
+                                        text = nepseVal?.let { String.format("%,.2f", it) } ?: "2,677.54",
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = SlateTextPrimary
                                     )
                                 }
                             }
 
-                            if (isNepseLoading && nepseVal == null) {
-                                Text(
-                                    text = "Loading index...",
-                                    fontSize = 12.sp,
-                                    color = SlateTextSecondary
-                                )
-                            } else {
-                                Text(
-                                    text = nepseVal?.let { String.format("%,.2f", it) } ?: "2,677.54",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = SlateTextPrimary
-                                )
+                            if (!nepseStatus.isNullOrBlank()) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.padding(start = 2.dp)
+                                ) {
+                                    val statusColor = if (nepseStatus!!.contains("OPEN", ignoreCase = true)) GainGreen else LossRed
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(3.dp))
+                                            .background(statusColor.copy(alpha = 0.15f))
+                                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                                    ) {
+                                        Text(
+                                            text = nepseStatus!!,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = statusColor
+                                        )
+                                    }
+                                    if (!nepseDateTime.isNullOrBlank()) {
+                                        Text(
+                                            text = nepseDateTime!!,
+                                            fontSize = 9.sp,
+                                            color = SlateTextSecondary
+                                        )
+                                    }
+                                }
                             }
                         }
 
@@ -437,21 +497,23 @@ fun DashboardScreen(
                                 )
                             }
                         }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Last Synced",
-                                tint = SlateTextSecondary,
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Text(
-                                text = "Synced: $lastSync",
-                                fontSize = 10.sp,
-                                color = SlateTextSecondary
-                            )
+                        Column(horizontalAlignment = Alignment.End) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Last Synced",
+                                    tint = SlateTextSecondary,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = "Synced: $lastSync",
+                                    fontSize = 10.sp,
+                                    color = SlateTextSecondary
+                                )
+                            }
                         }
                     }
 
@@ -572,8 +634,267 @@ fun DashboardScreen(
                 }
             }
         }
+        // Portfolio History Chart (interactive) — shown above Current Holdings
+        if (history.size >= 2) {
+            item {
+                // Parse and sort history chronologically for proper range selection
+                val dateFormats = remember {
+                    listOf(
+                        SimpleDateFormat("yyyy-MM-dd", Locale.US),
+                        SimpleDateFormat("yyyy/MM/dd", Locale.US),
+                        SimpleDateFormat("MM-dd-yyyy", Locale.US),
+                        SimpleDateFormat("MM/dd/yyyy", Locale.US),
+                        SimpleDateFormat("dd-MM-yyyy", Locale.US),
+                        SimpleDateFormat("dd/MM/yyyy", Locale.US)
+                    )
+                }
+                
+                val parsedHistory = remember(history) {
+                    history.mapNotNull { item ->
+                        var parsedDate: Date? = null
+                        for (fmt in dateFormats) {
+                            try {
+                                parsedDate = fmt.parse(item.date.trim())
+                                if (parsedDate != null) break
+                            } catch (e: Exception) {}
+                        }
+                        if (parsedDate != null) Pair(item, parsedDate) else null
+                    }.sortedBy { it.second }
+                }
 
+                val filteredHistory = remember(parsedHistory, selectedPeriod) {
+                    val now = Date()
+                    val calendar = Calendar.getInstance()
+                    val result = when (selectedPeriod) {
+                        "1M" -> {
+                            calendar.time = now
+                            calendar.add(Calendar.MONTH, -1)
+                            parsedHistory.filter { it.second.after(calendar.time) }
+                        }
+                        "3M" -> {
+                            calendar.time = now
+                            calendar.add(Calendar.MONTH, -3)
+                            parsedHistory.filter { it.second.after(calendar.time) }
+                        }
+                        "6M" -> {
+                            calendar.time = now
+                            calendar.add(Calendar.MONTH, -6)
+                            parsedHistory.filter { it.second.after(calendar.time) }
+                        }
+                        "1Y" -> {
+                            calendar.time = now
+                            calendar.add(Calendar.YEAR, -1)
+                            parsedHistory.filter { it.second.after(calendar.time) }
+                        }
+                        else -> parsedHistory
+                    }.map { it.first }
+                    
+                    if (result.size >= 2) result else history
+                }
 
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = SlateSurface),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, SlateBorder)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Text(
+                            text = if (hoveredPoint != null) "VALUE ON ${hoveredPoint?.date?.uppercase()}" else "PORTFOLIO HISTORY",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (hoveredPoint != null) GrowBlue else SlateTextSecondary,
+                            letterSpacing = 1.2.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        if (hoveredPoint != null) {
+                            val displayVal = hoveredPoint?.value ?: 0.0
+                            Text(
+                                text = moneyFormat.format(displayVal),
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = SlateTextPrimary
+                            )
+                        } else {
+                            Text(
+                                text = "Touch & drag graph to view details",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = SlateTextSecondary,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Interactive Chart
+                        val minVal = filteredHistory.minOf { it.value }
+                        val maxVal = filteredHistory.maxOf { it.value }
+                        val range = if (maxVal > minVal) maxVal - minVal else 1.0
+
+                        var chartSize by remember { mutableStateOf(IntSize.Zero) }
+                        var touchX by remember { mutableStateOf<Float?>(null) }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp)
+                                .onSizeChanged { chartSize = it }
+                                .pointerInput(filteredHistory) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            val anyPressed = event.changes.any { it.pressed }
+                                            if (!anyPressed) {
+                                                hoveredPoint = null
+                                                touchX = null
+                                            } else {
+                                                val position = event.changes.firstOrNull { it.pressed }?.position
+                                                    ?: event.changes.firstOrNull()?.position
+                                                touchX = position?.x
+                                                if (position != null && chartSize.width > 0) {
+                                                    val idx = ((position.x / chartSize.width) * filteredHistory.size)
+                                                        .roundToInt()
+                                                        .coerceIn(0, filteredHistory.size - 1)
+                                                    hoveredPoint = filteredHistory[idx]
+                                                }
+                                            }
+                                            event.changes.forEach { it.consume() }
+                                        }
+                                    }
+                                }
+                        ) {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val w = size.width
+                                val h = size.height
+                                val padBottom = 24f
+                                val padTop = 8f
+                                val chartH = h - padBottom - padTop
+
+                                fun xFor(i: Int) = if (filteredHistory.size > 1) w * i / (filteredHistory.size - 1) else w / 2
+                                fun yFor(v: Double) = padTop + chartH * (1.0 - (v - minVal) / range).toFloat()
+
+                                // Gradient fill
+                                val path = Path()
+                                path.moveTo(xFor(0), yFor(filteredHistory[0].value))
+                                for (i in 1 until filteredHistory.size) {
+                                    path.lineTo(xFor(i), yFor(filteredHistory[i].value))
+                                }
+                                val lastX = xFor(filteredHistory.size - 1)
+                                path.lineTo(lastX, h)
+                                path.lineTo(0f, h)
+                                path.close()
+                                drawPath(
+                                    path = path,
+                                    brush = Brush.verticalGradient(
+                                        colors = listOf(GrowBlue.copy(alpha = 0.35f), GrowBlue.copy(alpha = 0.0f))
+                                    )
+                                )
+
+                                // Line
+                                val linePath = Path()
+                                linePath.moveTo(xFor(0), yFor(filteredHistory[0].value))
+                                for (i in 1 until filteredHistory.size) {
+                                    linePath.lineTo(xFor(i), yFor(filteredHistory[i].value))
+                                }
+                                drawPath(
+                                    path = linePath,
+                                    color = GrowBlue,
+                                    style = Stroke(width = 2.5f, pathEffect = PathEffect.cornerPathEffect(8f))
+                                )
+
+                                // Crosshair and highlight dot
+                                val hovered = hoveredPoint
+                                if (hovered != null && chartSize.width > 0) {
+                                    val idx = filteredHistory.indexOf(hovered).coerceIn(0, filteredHistory.size - 1)
+                                    val cx = xFor(idx)
+                                    val cy = yFor(hovered.value)
+                                    // Vertical line
+                                    drawLine(
+                                        color = GrowBlue.copy(alpha = 0.5f),
+                                        start = Offset(cx, padTop),
+                                        end = Offset(cx, h - padBottom),
+                                        strokeWidth = 1f,
+                                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f))
+                                    )
+                                    // Dot
+                                    drawCircle(color = GrowBlue, radius = 5f, center = Offset(cx, cy))
+                                    drawCircle(color = Color.White, radius = 2.5f, center = Offset(cx, cy))
+                                }
+
+                                // Date lines: first and last
+                                if (filteredHistory.size >= 2) {
+                                    drawLine(
+                                        color = android.graphics.Color.valueOf(0.58f, 0.65f, 0.76f, 0.3f).toArgb().let { Color(it) },
+                                        start = Offset(0f, h - padBottom),
+                                        end = Offset(w, h - padBottom),
+                                        strokeWidth = 0.5f
+                                    )
+                                }
+                            }
+
+                            // Date labels overlay
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .align(Alignment.BottomCenter)
+                                    .padding(horizontal = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = filteredHistory.first().date,
+                                    fontSize = 9.sp,
+                                    color = SlateTextSecondary
+                                )
+                                Text(
+                                    text = filteredHistory.last().date,
+                                    fontSize = 9.sp,
+                                    color = SlateTextSecondary
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        // Period Selection Buttons (1M, 3M, 6M, 1Y, ALL)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val periods = listOf("1M", "3M", "6M", "1Y", "ALL")
+                            periods.forEach { period ->
+                                val isSelected = selectedPeriod == period
+                                val chipBg = if (isSelected) GrowBlue.copy(alpha = 0.15f) else Color.Transparent
+                                val chipBorderColor = if (isSelected) GrowBlue else SlateBorder
+                                val textColor = if (isSelected) GrowBlue else SlateTextSecondary
+                                val fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(chipBg)
+                                        .border(1.dp, chipBorderColor, RoundedCornerShape(8.dp))
+                                        .clickable { selectedPeriod = period }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = period,
+                                        fontSize = 11.sp,
+                                        fontWeight = fontWeight,
+                                        color = textColor
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Current Holdings Header with Search & Filter Toggle
         item {
@@ -788,6 +1109,7 @@ fun DashboardScreen(
             }
         }
     }
+    } // end PullToRefreshBox
 }
 
 @Composable
@@ -819,18 +1141,26 @@ fun HoldingRowItem(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Box(
+                        Row(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(GrowBlue.copy(alpha = 0.15f))
                                 .clickable { onTickerClick(holding.ticker) }
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
                                 text = holding.ticker,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = GrowBlue
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ShowChart,
+                                contentDescription = "Open Chart",
+                                tint = GrowBlue,
+                                modifier = Modifier.size(12.dp)
                             )
                         }
                         Text(
@@ -915,13 +1245,13 @@ fun HoldingRowItem(
                             Column(modifier = Modifier.weight(1f)) {
                                 GridItem(
                                     label = "WACC (Avg Cost)",
-                                    value = "Rs ${moneyFormat.format(holding.avgPrice)}"
+                                    value = moneyFormat.format(holding.avgPrice)
                                 )
                             }
                             Column(modifier = Modifier.weight(1f)) {
                                 GridItem(
                                     label = "Total Cost",
-                                    value = "Rs ${moneyFormat.format(holding.shares * holding.avgPrice)}"
+                                    value = moneyFormat.format(holding.shares * holding.avgPrice)
                                 )
                             }
                         }
@@ -933,7 +1263,7 @@ fun HoldingRowItem(
                             Column(modifier = Modifier.weight(1f)) {
                                 GridItem(
                                     label = "Overall Profit / Loss",
-                                    value = "${if (overallIsGain) "+" else ""}Rs ${moneyFormat.format(holding.gainLoss)} (${String.format("%.2f%%", holding.gainLossPercent)})",
+                                    value = "${if (overallIsGain) "+" else ""}${moneyFormat.format(holding.gainLoss)} (${String.format("%.2f%%", holding.gainLossPercent)})",
                                     valueColor = overallColor
                                 )
                             }
@@ -951,10 +1281,10 @@ fun HoldingRowItem(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    GridItem(label = "Today's High", value = "Rs ${moneyFormat.format(stockItem.high)}")
+                                    GridItem(label = "Today's High", value = moneyFormat.format(stockItem.high))
                                 }
                                 Column(modifier = Modifier.weight(1f)) {
-                                    GridItem(label = "Today's Low", value = "Rs ${moneyFormat.format(stockItem.low)}")
+                                    GridItem(label = "Today's Low", value = moneyFormat.format(stockItem.low))
                                 }
                             }
                             Row(
@@ -962,10 +1292,10 @@ fun HoldingRowItem(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    GridItem(label = "Opening Price", value = "Rs ${moneyFormat.format(stockItem.open)}")
+                                    GridItem(label = "Opening Price", value = moneyFormat.format(stockItem.open))
                                 }
                                 Column(modifier = Modifier.weight(1f)) {
-                                    GridItem(label = "LTP (Last Price)", value = "Rs ${moneyFormat.format(stockItem.price)}")
+                                    GridItem(label = "LTP (Last Price)", value = moneyFormat.format(stockItem.price))
                                 }
                             }
                         } else {
@@ -974,10 +1304,10 @@ fun HoldingRowItem(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    GridItem(label = "LTP (Last Price)", value = "Rs ${moneyFormat.format(holding.currentPrice)}")
+                                    GridItem(label = "LTP (Last Price)", value = moneyFormat.format(holding.currentPrice))
                                 }
                                 Column(modifier = Modifier.weight(1f)) {
-                                    GridItem(label = "Current Value", value = "Rs ${moneyFormat.format(holding.marketValue)}")
+                                    GridItem(label = "Current Value", value = moneyFormat.format(holding.marketValue))
                                 }
                             }
                         }
@@ -1084,11 +1414,36 @@ fun StockListScreen(
         }
     }
 
+    val syncState by viewModel.syncState.collectAsState()
+    var isRefreshing by remember { mutableStateOf(false) }
+    LaunchedEffect(syncState) { if (syncState !is SyncState.Syncing) isRefreshing = false }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = { isRefreshing = true; viewModel.refreshFromSheets() },
+        modifier = modifier.fillMaxSize()
+    ) {
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp)
     ) {
+        // Title Row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "${filteredStocks.size} stock(s)",
+                fontSize = 12.sp,
+                color = SlateTextSecondary
+            )
+        }
+
         // Search Box and Filter Toggle Row
         Row(
             modifier = Modifier
@@ -1261,24 +1616,6 @@ fun StockListScreen(
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Market Directory",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = SlateTextPrimary
-            )
-            Text(
-                text = "${filteredStocks.size} stock(s)",
-                fontSize = 12.sp,
-                color = SlateTextSecondary
-            )
-        }
-
         Spacer(modifier = Modifier.height(12.dp))
 
         if (filteredStocks.isEmpty()) {
@@ -1320,6 +1657,7 @@ fun StockListScreen(
             }
         }
     }
+    } // end PullToRefreshBox
 }
 
 @Composable
@@ -1330,84 +1668,128 @@ fun StockRowItem(stock: StockItem, onTickerClick: (String) -> Unit) {
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, SlateBorder)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(14.dp)
         ) {
-            Column(modifier = Modifier.weight(1.3f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(SlateBorder)
-                            .clickable { onTickerClick(stock.ticker) }
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1.3f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(SlateBorder)
+                                .clickable { onTickerClick(stock.ticker) }
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = stock.ticker,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SlateTextPrimary
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ShowChart,
+                                contentDescription = "Open Chart",
+                                tint = SlateTextPrimary,
+                                modifier = Modifier.size(11.dp)
+                            )
+                        }
                         Text(
-                            text = stock.ticker,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = SlateTextPrimary
+                            text = stock.name,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = SlateTextPrimary,
+                            maxLines = 1
                         )
                     }
-                    Text(
-                        text = stock.name,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = SlateTextPrimary,
-                        maxLines = 1
-                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stock.sector,
+                            fontSize = 11.sp,
+                            color = SlateTextSecondary
+                        )
+                        Text(
+                            text = "•",
+                            color = SlateBorder,
+                            fontSize = 10.sp
+                        )
+                        Text(
+                            text = "Vol: ${formatVolume(stock.volume)}",
+                            fontSize = 11.sp,
+                            color = SlateTextSecondary
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    modifier = Modifier.weight(0.7f)
                 ) {
                     Text(
-                        text = stock.sector,
-                        fontSize = 11.sp,
-                        color = SlateTextSecondary
+                        text = moneyFormat.format(stock.price),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextPrimary
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    val isPositive = stock.change >= 0
+                    val color = if (isPositive) GainGreen else LossRed
+                    val text = "${if (isPositive) "+" else ""}${moneyFormat.format(stock.change)} (${String.format("%.2f%%", stock.changePercent)})"
                     Text(
-                        text = "•",
-                        color = SlateBorder,
-                        fontSize = 10.sp
-                    )
-                    Text(
-                        text = "Vol: ${formatVolume(stock.volume)}",
+                        text = text,
                         fontSize = 11.sp,
-                        color = SlateTextSecondary
+                        fontWeight = FontWeight.SemiBold,
+                        color = color
                     )
                 }
             }
 
-            Column(
-                horizontalAlignment = Alignment.End,
-                modifier = Modifier.weight(0.7f)
-            ) {
-                Text(
-                    text = moneyFormat.format(stock.price),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = SlateTextPrimary
-                )
-                Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-                val isPositive = stock.change >= 0
-                val color = if (isPositive) GainGreen else LossRed
-                val text = "${if (isPositive) "+" else ""}${moneyFormat.format(stock.change)} (${String.format("%.2f%%", stock.changePercent)})"
-                Text(
-                    text = text,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = color
-                )
+            // Sub-bar for Open, High, Low, Swing%
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(SlateBg.copy(alpha = 0.6f))
+                    .border(0.5.dp, SlateBorder.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(horizontalAlignment = Alignment.Start) {
+                    Text("OPEN", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                    Text(moneyFormat.format(stock.open), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = SlateTextPrimary)
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("HIGH", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                    Text(moneyFormat.format(stock.high), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = GainGreen)
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("LOW", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                    Text(moneyFormat.format(stock.low), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = LossRed)
+                }
+                val swingVal = if (stock.low > 0) ((stock.high - stock.low) / stock.low) * 100.0 else 0.0
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("SWING %", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                    Text(String.format("%.2f%%", swingVal), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFBA68C8))
+                }
             }
         }
     }
@@ -1476,8 +1858,18 @@ fun WatchListScreen(
         }
     }
 
+    val syncStateWatch by viewModel.syncState.collectAsState()
+    var isRefreshingWatch by remember { mutableStateOf(false) }
+    LaunchedEffect(syncStateWatch) { if (syncStateWatch !is SyncState.Syncing) isRefreshingWatch = false }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    PullToRefreshBox(
+        isRefreshing = isRefreshingWatch,
+        onRefresh = { isRefreshingWatch = true; viewModel.refreshFromSheets() },
+        modifier = modifier.fillMaxSize()
+    ) {
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp)
     ) {
@@ -1485,16 +1877,10 @@ fun WatchListScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "My Stock Watchlist",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = SlateTextPrimary
-            )
             Text(
                 text = "${filteredWatchlist.size} stock(s)",
                 fontSize = 12.sp,
@@ -1696,6 +2082,7 @@ fun WatchListScreen(
             }
         }
     }
+    } // end PullToRefreshBox
 }
 
 @Composable
@@ -1710,33 +2097,39 @@ fun WatchRowItem(
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, SlateBorder)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1.1f)) {
+                Column(modifier = Modifier.weight(1.3f)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Box(
+                        Row(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(GrowBlue.copy(alpha = 0.15f))
                                 .clickable { onTickerClick(watch.ticker) }
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
                                 text = watch.ticker,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = GrowBlue
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ShowChart,
+                                contentDescription = "Open Chart",
+                                tint = GrowBlue,
+                                modifier = Modifier.size(11.dp)
                             )
                         }
                         Text(
@@ -1747,141 +2140,149 @@ fun WatchRowItem(
                             maxLines = 1
                         )
                     }
-                    if (stockItem != null) {
-                        Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = stockItem.sector,
+                            text = stockItem?.sector ?: "N/A",
                             fontSize = 11.sp,
-                            color = SlateTextSecondary,
-                            fontWeight = FontWeight.Medium
+                            color = SlateTextSecondary
                         )
+                        if (stockItem != null) {
+                            Text(
+                                text = "•",
+                                color = SlateBorder,
+                                fontSize = 10.sp
+                            )
+                            Text(
+                                text = "Vol: ${formatVolume(stockItem.volume)}",
+                                fontSize = 11.sp,
+                                color = SlateTextSecondary
+                            )
+                        }
                     }
                 }
 
                 Column(
                     horizontalAlignment = Alignment.End,
-                    modifier = Modifier.weight(0.9f)
+                    modifier = Modifier.weight(0.7f)
                 ) {
                     val activeCurrentPrice = stockItem?.price ?: watch.currentPrice
                     Text(
-                        text = "Rs ${moneyFormat.format(activeCurrentPrice)}",
+                        text = moneyFormat.format(activeCurrentPrice),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = SlateTextPrimary
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
+
                     if (stockItem != null) {
-                        val isGain = stockItem.change >= 0
-                        val changeColor = if (isGain) GainGreen else LossRed
+                        val isPositive = stockItem.change >= 0
+                        val color = if (isPositive) GainGreen else LossRed
+                        val text = "${if (isPositive) "+" else ""}${moneyFormat.format(stockItem.change)} (${if (stockItem.changePercent >= 0) "+" else ""}${String.format("%.2f%%", stockItem.changePercent)})"
                         Text(
-                            text = "${if (isGain) "+" else ""}${moneyFormat.format(stockItem.change)} (${if (stockItem.changePercent >= 0) "+" else ""}${String.format("%.2f%%", stockItem.changePercent)})",
+                            text = text,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = changeColor
+                            color = color
                         )
                     } else {
                         Text(
-                            text = "Current",
-                            fontSize = 10.sp,
+                            text = "Market Price",
+                            fontSize = 11.sp,
                             color = SlateTextSecondary
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-            HorizontalDivider(color = SlateBorder.copy(alpha = 0.6f), thickness = 0.8.dp)
-            Spacer(modifier = Modifier.height(12.dp))
+            if (stockItem != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp)
+                        .padding(bottom = 12.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SlateBg.copy(alpha = 0.6f))
+                        .border(0.5.dp, SlateBorder.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(horizontalAlignment = Alignment.Start) {
+                        Text("OPEN", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                        Text(moneyFormat.format(stockItem.open), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = SlateTextPrimary)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("HIGH", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                        Text(moneyFormat.format(stockItem.high), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = GainGreen)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("LOW", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                        Text(moneyFormat.format(stockItem.low), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = LossRed)
+                    }
+                    val swingVal = if (stockItem.low > 0) ((stockItem.high - stockItem.low) / stockItem.low) * 100.0 else 0.0
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("SWING %", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                        Text(String.format("%.2f%%", swingVal), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFBA68C8))
+                    }
+                }
+            }
+
+            HorizontalDivider(color = SlateBorder.copy(alpha = 0.5f), thickness = 0.8.dp)
 
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(SlateBg.copy(alpha = 0.2f))
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     Text(
-                        text = "Rs ${moneyFormat.format(watch.targetPrice)}",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = SlateTextPrimary
+                        text = "Target:",
+                        fontSize = 11.sp,
+                        color = SlateTextSecondary,
+                        fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "Target Price",
-                        fontSize = 10.sp,
-                        color = SlateTextSecondary
+                        text = moneyFormat.format(watch.targetPrice),
+                        fontSize = 12.sp,
+                        color = SlateTextPrimary,
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
-                // Gap calculation
                 val activeCurrentPrice = stockItem?.price ?: watch.currentPrice
                 val gapPercent = if (activeCurrentPrice > 0) {
                     (watch.targetPrice - activeCurrentPrice) / activeCurrentPrice * 100
                 } else 0.0
 
-                val badgeColor = if (gapPercent >= 0) GainGreen else LossRed
-                val badgeText = if (gapPercent >= 0) {
-                    "At target (+${String.format("%.1f%%", gapPercent)})"
+                val isTargetReached = gapPercent >= 0
+                val badgeColor = if (isTargetReached) GainGreen else LossRed
+                val proximityText = if (isTargetReached) {
+                    "Reached (+${String.format("%.1f%%", gapPercent)})"
                 } else {
                     "${String.format("%.1f%%", gapPercent)} to target"
                 }
 
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(badgeColor.copy(alpha = 0.15f))
-                        .border(BorderStroke(1.dp, badgeColor.copy(alpha = 0.3f)), RoundedCornerShape(20.dp))
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(badgeColor.copy(alpha = 0.12f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        text = badgeText,
-                        fontSize = 11.sp,
+                        text = proximityText,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = badgeColor
-                    )
-                }
-            }
-
-            // Key daily statistics if available
-            if (stockItem != null) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        GridItem(label = "Daily Open", value = "Rs ${moneyFormat.format(stockItem.open)}")
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        GridItem(label = "Daily High", value = "Rs ${moneyFormat.format(stockItem.high)}")
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        GridItem(label = "Daily Low", value = "Rs ${moneyFormat.format(stockItem.low)}")
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        GridItem(label = "Daily Volume", value = formatVolume(stockItem.volume))
-                    }
-                }
-            }
-
-            if (watch.notes.isNotBlank()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(SlateBg)
-                        .padding(10.dp)
-                ) {
-                    Text(
-                        text = watch.notes,
-                        fontSize = 12.sp,
-                        color = SlateTextSecondary,
-                        style = MaterialTheme.typography.bodyMedium
                     )
                 }
             }
@@ -1897,8 +2298,18 @@ fun HistoryScreen(
     val history by viewModel.portfolioHistory.collectAsState()
     var hoveredPoint by remember { mutableStateOf<PortfolioHistory?>(null) }
 
+    val syncStateHist by viewModel.syncState.collectAsState()
+    var isRefreshingHist by remember { mutableStateOf(false) }
+    LaunchedEffect(syncStateHist) { if (syncStateHist !is SyncState.Syncing) isRefreshingHist = false }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    PullToRefreshBox(
+        isRefreshing = isRefreshingHist,
+        onRefresh = { isRefreshingHist = true; viewModel.refreshFromSheets() },
+        modifier = modifier.fillMaxSize()
+    ) {
     LazyColumn(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -2033,6 +2444,7 @@ fun HistoryScreen(
             }
         }
     }
+    } // end PullToRefreshBox
 }
 
 @Composable
@@ -2407,15 +2819,7 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(bottom = 24.dp)
     ) {
-        item {
-            Text(
-                text = "Sheet Integration",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = SlateTextPrimary,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-        }
+
 
         // Google Authentication Card
         item {
@@ -2659,6 +3063,283 @@ fun SettingsScreen(
                                     }
                                     else -> {}
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Auto-Fetch Schedule Card
+        item {
+            val autoSyncDays by viewModel.autoSyncDays.collectAsState()
+            val autoSyncStart by viewModel.autoSyncStartMinutes.collectAsState()
+            val autoSyncEnd by viewModel.autoSyncEndMinutes.collectAsState()
+
+            val dayLabels = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+
+            fun minutesToTime(m: Int): String {
+                val h = m / 60
+                val min = m % 60
+                val ampm = if (h < 12) "AM" else "PM"
+                val displayH = if (h == 0) 12 else if (h > 12) h - 12 else h
+                return String.format("%d:%02d %s", displayH, min, ampm)
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = SlateSurface),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, SlateBorder)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
+                ) {
+                    Text(
+                        text = "AUTO-FETCH SCHEDULE",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextSecondary,
+                        letterSpacing = 1.2.sp
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Auto-fetch runs every minute during the configured window (Nepal Time). Default: Mon–Fri, 10:45 AM – 3:00 PM NST.",
+                        fontSize = 11.sp,
+                        color = SlateTextSecondary,
+                        lineHeight = 15.sp
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "ACTIVE DAYS",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextSecondary,
+                        letterSpacing = 1.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(dayLabels.size) { idx ->
+                            val selected = idx in autoSyncDays
+                            val chipBg = if (selected) GrowBlue else SlateBg
+                            val chipText = if (selected) Color.White else SlateTextSecondary
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(chipBg)
+                                    .border(1.dp, if (selected) GrowBlue else SlateBorder, RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        val newDays = autoSyncDays.toMutableSet()
+                                        if (selected) newDays.remove(idx) else newDays.add(idx)
+                                        viewModel.updateAutoSyncDays(newDays)
+                                    }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = dayLabels[idx],
+                                    fontSize = 12.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                    color = chipText
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "TIME WINDOW (NST)",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextSecondary,
+                        letterSpacing = 1.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("START", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            // Simplified: +/- buttons for time adjustment
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                IconButton(
+                                    onClick = { viewModel.updateAutoSyncStartMinutes((autoSyncStart - 15).coerceAtLeast(0)) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = SlateTextSecondary, modifier = Modifier.size(16.dp))
+                                }
+                                Text(
+                                    text = minutesToTime(autoSyncStart),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SlateTextPrimary
+                                )
+                                IconButton(
+                                    onClick = { viewModel.updateAutoSyncStartMinutes((autoSyncStart + 15).coerceAtMost(autoSyncEnd - 15)) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = "Increase", tint = SlateTextSecondary, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                        Icon(Icons.Default.ArrowForward, contentDescription = "to", tint = SlateTextSecondary, modifier = Modifier.size(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("END", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                IconButton(
+                                    onClick = { viewModel.updateAutoSyncEndMinutes((autoSyncEnd - 15).coerceAtLeast(autoSyncStart + 15)) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = SlateTextSecondary, modifier = Modifier.size(16.dp))
+                                }
+                                Text(
+                                    text = minutesToTime(autoSyncEnd),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SlateTextPrimary
+                                )
+                                IconButton(
+                                    onClick = { viewModel.updateAutoSyncEndMinutes((autoSyncEnd + 15).coerceAtMost(23 * 60 + 59)) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = "Increase", tint = SlateTextSecondary, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Gemini API Configuration Card
+        item {
+            val geminiApiKey by viewModel.geminiApiKey.collectAsState()
+            var localKey by remember(geminiApiKey) { mutableStateOf(geminiApiKey) }
+            var isEditingKey by remember { mutableStateOf(false) }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = SlateSurface),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, SlateBorder)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
+                ) {
+                    Text(
+                        text = "GEMINI AI COGNITIVE AGENT CONFIG",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextSecondary,
+                        letterSpacing = 1.2.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Customize your AI Assistant. Enter a custom Gemini API Key below to override the default system key. If left blank, NepSecure uses its pre-configured secure system key.",
+                        fontSize = 12.sp,
+                        color = SlateTextSecondary,
+                        lineHeight = 16.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    if (isEditingKey) {
+                        OutlinedTextField(
+                            value = localKey,
+                            onValueChange = { localKey = it },
+                            label = { Text("Gemini API Key", color = SlateTextSecondary) },
+                            placeholder = { Text("AIzaSy...", color = SlateTextSecondary) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = SlateTextPrimary,
+                                unfocusedTextColor = SlateTextPrimary,
+                                focusedContainerColor = SlateBg,
+                                unfocusedContainerColor = SlateBg,
+                                focusedBorderColor = GrowBlue,
+                                unfocusedBorderColor = SlateBorder
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    viewModel.updateGeminiApiKey(localKey)
+                                    isEditingKey = false
+                                    android.widget.Toast.makeText(context, "Gemini API Key saved successfully!", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = GrowBlue)
+                            ) {
+                                Text("Save Key", fontWeight = FontWeight.Bold)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    localKey = geminiApiKey
+                                    isEditingKey = false
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = SlateTextPrimary),
+                                border = BorderStroke(1.dp, SlateBorder)
+                            ) {
+                                Text("Cancel")
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(SlateBg)
+                                .border(1.dp, SlateBorder, RoundedCornerShape(10.dp))
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Current Key Status",
+                                    fontSize = 11.sp,
+                                    color = SlateTextSecondary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (geminiApiKey.isNotBlank()) {
+                                        "Custom Key Enabled (AIzaSy..." + geminiApiKey.takeLast(4) + ")"
+                                    } else {
+                                        "Using Secure Default System Key"
+                                    },
+                                    fontSize = 12.sp,
+                                    color = if (geminiApiKey.isNotBlank()) GainGreen else SlateTextPrimary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            IconButton(
+                                onClick = { isEditingKey = true }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit Key",
+                                    tint = GrowBlue
+                                )
                             }
                         }
                     }
@@ -3317,24 +3998,27 @@ fun NewsScreen(
     val newsError by viewModel.newsError.collectAsState()
     val context = LocalContext.current
 
+    var isRefreshingNews by remember { mutableStateOf(false) }
+    LaunchedEffect(isNewsLoading) { if (!isNewsLoading) isRefreshingNews = false }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    PullToRefreshBox(
+        isRefreshing = isRefreshingNews,
+        onRefresh = { isRefreshingNews = true; viewModel.fetchNews() },
+        modifier = modifier.fillMaxSize()
+    ) {
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Market Report & News",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = SlateTextPrimary
-            )
             IconButton(
                 onClick = { viewModel.fetchNews() },
                 enabled = !isNewsLoading
@@ -3508,5 +4192,472 @@ fun NewsScreen(
             }
         }
     }
+    } // end PullToRefreshBox
 }
+
+@Composable
+fun AiAssistantScreen(
+    viewModel: PortfolioViewModel,
+    modifier: Modifier = Modifier
+) {
+    val chatMessages by viewModel.chatMessages.collectAsState()
+    val isGenerating by viewModel.isGenerating.collectAsState()
+    var userQuery by remember { mutableStateOf("") }
+    val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
+
+    // Auto-scroll to latest message
+    LaunchedEffect(chatMessages.size) {
+        if (chatMessages.isNotEmpty()) {
+            lazyListState.animateScrollToItem(chatMessages.size - 1)
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // Elegant Section Header
+        Column {
+            Text(
+                text = "NEPSECURE AI ENGINE",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = GrowBlue,
+                letterSpacing = 1.5.sp
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "Activate real-time market blueprints and smart cognitive audits",
+                fontSize = 12.sp,
+                color = SlateTextSecondary
+            )
+        }
+
+        // Beautiful Interactive Trigger Cards
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // NEPSE Index Blueprint Card
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(enabled = !isGenerating) { viewModel.analyzeNepse() },
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isGenerating) SlateBg.copy(alpha = 0.5f) else SlateSurface
+                ),
+                border = BorderStroke(1.2.dp, GrowBlue.copy(alpha = 0.4f)),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(GrowBlue.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.TrendingUp,
+                            contentDescription = "Analyze NEPSE",
+                            tint = GrowBlue,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "NEPSE Blueprint",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextPrimary,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Full Index Run",
+                        fontSize = 9.sp,
+                        color = SlateTextSecondary,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            // Portfolio Auditor Card
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(enabled = !isGenerating) { viewModel.analyzePortfolio() },
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isGenerating) SlateBg.copy(alpha = 0.5f) else SlateSurface
+                ),
+                border = BorderStroke(1.2.dp, GainGreen.copy(alpha = 0.4f)),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(GainGreen.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AccountBalanceWallet,
+                            contentDescription = "Audit Portfolio",
+                            tint = GainGreen,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Risk Auditor",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextPrimary,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Holdings Audit",
+                        fontSize = 9.sp,
+                        color = SlateTextSecondary,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            // Watchlist Targets Card
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(enabled = !isGenerating) { viewModel.analyzeWatchlist() },
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isGenerating) SlateBg.copy(alpha = 0.5f) else SlateSurface
+                ),
+                border = BorderStroke(1.2.dp, Color(0xFFBA68C8).copy(alpha = 0.4f)),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFBA68C8).copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.TrackChanges,
+                            contentDescription = "Watchlist Strategy",
+                            tint = Color(0xFFBA68C8),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Watch Targets",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextPrimary,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Price Proximity",
+                        fontSize = 9.sp,
+                        color = SlateTextSecondary,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+
+        // Terminal Chat Canvas
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(SlateSurface)
+                .border(1.dp, SlateBorder, RoundedCornerShape(16.dp))
+                .padding(12.dp)
+        ) {
+            if (chatMessages.isEmpty()) {
+                // Empty State with Guidance
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(GrowBlue.copy(alpha = 0.1f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = "AI Glow",
+                            tint = GrowBlue,
+                            modifier = Modifier.size(30.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "NepSecure Cognitive Terminal",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Trigger a real-time market report above or ask custom questions below to begin your analysis.",
+                        fontSize = 12.sp,
+                        color = SlateTextSecondary,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.fillMaxWidth(0.85f)
+                    )
+                }
+            } else {
+                LazyColumn(
+                    state = lazyListState,
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    contentPadding = PaddingValues(bottom = 12.dp)
+                ) {
+                    items(chatMessages) { message ->
+                        val isUser = message.isUser
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            if (!isUser) {
+                                Box(
+                                    modifier = Modifier
+                                        .padding(end = 8.dp, top = 2.dp)
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(GrowBlue.copy(alpha = 0.15f))
+                                        .border(1.dp, GrowBlue.copy(alpha = 0.4f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoAwesome,
+                                        contentDescription = "AI",
+                                        tint = GrowBlue,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                            }
+
+                            val bubbleShape = if (isUser) {
+                                RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp)
+                            } else {
+                                RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp)
+                            }
+
+                            val bubbleBg = if (isUser) {
+                                GrowBlue
+                            } else {
+                                SlateBg
+                            }
+
+                            val borderStroke = if (isUser) {
+                                null
+                            } else {
+                                BorderStroke(1.dp, SlateBorder)
+                            }
+
+                            Surface(
+                                color = bubbleBg,
+                                shape = bubbleShape,
+                                border = borderStroke,
+                                modifier = Modifier.fillMaxWidth(0.85f)
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text(
+                                        text = formatMarkdown(message.text),
+                                        fontSize = 13.sp,
+                                        lineHeight = 20.sp,
+                                        color = if (isUser) Color.White else SlateTextPrimary
+                                    )
+                                }
+                            }
+
+                            if (isUser) {
+                                Box(
+                                    modifier = Modifier
+                                        .padding(start = 8.dp, top = 2.dp)
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFBA68C8).copy(alpha = 0.15f))
+                                        .border(1.dp, Color(0xFFBA68C8).copy(alpha = 0.4f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Person,
+                                        contentDescription = "User",
+                                        tint = Color(0xFFBA68C8),
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (isGenerating) {
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(GrowBlue.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        color = GrowBlue,
+                                        strokeWidth = 2.dp
+                                    )
+                                }
+                                Text(
+                                    text = "Cognitive agent thinking...",
+                                    fontSize = 12.sp,
+                                    color = SlateTextSecondary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Query input box & send buttons
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Clear button
+            IconButton(
+                onClick = { viewModel.clearChat() },
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(SlateSurface)
+                    .border(1.dp, SlateBorder, RoundedCornerShape(12.dp))
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DeleteSweep,
+                    contentDescription = "Clear Chat",
+                    tint = LossRed
+                )
+            }
+
+            // Input field
+            OutlinedTextField(
+                value = userQuery,
+                onValueChange = { userQuery = it },
+                placeholder = { Text("Ask anything about NEPSE...", color = SlateTextSecondary, fontSize = 13.sp) },
+                maxLines = 4,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = SlateTextPrimary,
+                    unfocusedTextColor = SlateTextPrimary,
+                    focusedContainerColor = SlateSurface,
+                    unfocusedContainerColor = SlateSurface,
+                    focusedBorderColor = GrowBlue,
+                    unfocusedBorderColor = SlateBorder
+                )
+            )
+
+            // Send button
+            IconButton(
+                onClick = {
+                    if (userQuery.isNotBlank() && !isGenerating) {
+                        viewModel.sendUserMessage(userQuery)
+                        userQuery = ""
+                    }
+                },
+                enabled = userQuery.isNotBlank() && !isGenerating,
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (userQuery.isNotBlank() && !isGenerating) GrowBlue else SlateSurface)
+                    .border(
+                        1.dp,
+                        if (userQuery.isNotBlank() && !isGenerating) GrowBlue else SlateBorder,
+                        RoundedCornerShape(12.dp)
+                    )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Send,
+                    contentDescription = "Send Message",
+                    tint = if (userQuery.isNotBlank() && !isGenerating) Color.White else SlateTextSecondary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun formatMarkdown(text: String): AnnotatedString {
+    val builder = AnnotatedString.Builder()
+    val lines = text.split("\n")
+    for (index in lines.indices) {
+        val line = lines[index]
+        val trimmed = line.trim()
+        if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+            builder.pushStyle(androidx.compose.ui.text.SpanStyle(color = GrowBlue, fontWeight = FontWeight.Bold))
+            builder.append("  • ")
+            builder.pop()
+            val content = if (trimmed.startsWith("- ")) trimmed.substring(2) else trimmed.substring(2)
+            parseBold(content, builder)
+        } else {
+            parseBold(line, builder)
+        }
+        if (index < lines.size - 1) {
+            builder.append("\n")
+        }
+    }
+    return builder.toAnnotatedString()
+}
+
+private fun parseBold(text: String, builder: AnnotatedString.Builder) {
+    val parts = text.split("**")
+    for (i in parts.indices) {
+        if (i % 2 == 1) {
+            builder.pushStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, color = Color.White))
+            builder.append(parts[i])
+            builder.pop()
+        } else {
+            builder.append(parts[i])
+        }
+    }
+}
+
 

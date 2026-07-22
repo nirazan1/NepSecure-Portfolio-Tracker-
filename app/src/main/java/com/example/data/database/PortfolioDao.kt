@@ -52,6 +52,16 @@ interface PortfolioDao {
     @Query("DELETE FROM watch_list")
     suspend fun clearWatchList()
 
+    // Chat Messages
+    @Query("SELECT * FROM chat_messages ORDER BY timestamp ASC")
+    fun getChatMessagesFlow(): Flow<List<ChatMessageEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChatMessage(message: ChatMessageEntity)
+
+    @Query("DELETE FROM chat_messages")
+    suspend fun clearChatMessages()
+
     // Transaction to replace cached data atomically
     @Transaction
     suspend fun refreshAll(

@@ -54,12 +54,15 @@ import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.StockListScreen
 import com.example.ui.screens.WatchListScreen
 import com.example.ui.screens.NewsScreen
+import com.example.ui.screens.AiAssistantScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.SlateBg
 import com.example.ui.theme.SlateBorder
 import com.example.ui.theme.SlateSurface
 import com.example.ui.theme.SlateTextPrimary
 import com.example.ui.theme.SlateTextSecondary
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.outlined.AutoAwesome
 
 enum class PortfolioTab(
     val title: String,
@@ -70,6 +73,7 @@ enum class PortfolioTab(
     DASHBOARD("Portfolio", Icons.Filled.Dashboard, Icons.Outlined.Dashboard, "tab_dashboard"),
     STOCK_LIST("Stock List", Icons.Filled.List, Icons.Outlined.List, "tab_stocks"),
     WATCHLIST("Watchlist", Icons.Filled.Star, Icons.Outlined.Star, "tab_watch"),
+    AI_CHAT("AI", Icons.Filled.AutoAwesome, Icons.Outlined.AutoAwesome, "tab_ai"),
     NEWS("News", Icons.Filled.Newspaper, Icons.Outlined.Newspaper, "tab_news"),
     SETTINGS("Settings", Icons.Filled.Settings, Icons.Outlined.Settings, "tab_settings")
 }
@@ -109,23 +113,6 @@ fun MainLayout() {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = currentTab.title,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = SlateTextPrimary
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = SlateBg,
-                    titleContentColor = SlateTextPrimary
-                ),
-                modifier = Modifier.testTag("app_top_bar")
-            )
-        },
         bottomBar = {
             NavigationBar(
                 containerColor = SlateSurface,
@@ -174,6 +161,7 @@ fun MainLayout() {
                 PortfolioTab.DASHBOARD -> DashboardScreen(viewModel = viewModel)
                 PortfolioTab.STOCK_LIST -> StockListScreen(viewModel = viewModel)
                 PortfolioTab.WATCHLIST -> WatchListScreen(viewModel = viewModel)
+                PortfolioTab.AI_CHAT -> AiAssistantScreen(viewModel = viewModel)
                 PortfolioTab.NEWS -> NewsScreen(viewModel = viewModel)
                 PortfolioTab.SETTINGS -> SettingsScreen(viewModel = viewModel)
             }

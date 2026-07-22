@@ -23,6 +23,7 @@ class PortfolioRepository(
     val stockList: Flow<List<StockItem>> = portfolioDao.getStockListFlow()
     val portfolioHistory: Flow<List<PortfolioHistory>> = portfolioDao.getPortfolioHistoryFlow()
     val watchList: Flow<List<WatchStock>> = portfolioDao.getWatchListFlow()
+    val chatMessages: Flow<List<ChatMessageEntity>> = portfolioDao.getChatMessagesFlow()
 
     private val sharedPrefs = context.getSharedPreferences("portfolio_tracker_prefs", Context.MODE_PRIVATE)
 
@@ -73,6 +74,42 @@ class PortfolioRepository(
     fun saveO5Value(value: Double) {
         sharedPrefs.edit().putString("o5_value_str", value.toString()).apply()
     }
+
+    fun getNepseStatus(): String? {
+        return sharedPrefs.getString("nepse_status", null)
+    }
+
+    fun saveNepseStatus(status: String?) {
+        if (status == null) sharedPrefs.edit().remove("nepse_status").apply()
+        else sharedPrefs.edit().putString("nepse_status", status).apply()
+    }
+
+    fun getNepseDateTime(): String? {
+        return sharedPrefs.getString("nepse_datetime", null)
+    }
+
+    fun saveNepseDateTime(dt: String?) {
+        if (dt == null) sharedPrefs.edit().remove("nepse_datetime").apply()
+        else sharedPrefs.edit().putString("nepse_datetime", dt).apply()
+    }
+
+    // Auto-sync schedule settings
+    // activeDays: comma-separated day indices (0=Sun..6=Sat). Default = "1,2,3,4,5" (Mon-Fri)
+    fun getAutoSyncDays(): Set<Int> {
+        val raw = sharedPrefs.getString("auto_sync_days", "1,2,3,4,5") ?: "1,2,3,4,5"
+        return raw.split(",").mapNotNull { it.trim().toIntOrNull() }.toSet()
+    }
+
+    fun saveAutoSyncDays(days: Set<Int>) {
+        sharedPrefs.edit().putString("auto_sync_days", days.sorted().joinToString(",")).apply()
+    }
+
+    // startMinutes / endMinutes: minutes since midnight. Default: 10:45=645, 15:00=900
+    fun getAutoSyncStartMinutes(): Int = sharedPrefs.getInt("auto_sync_start", 645)
+    fun saveAutoSyncStartMinutes(minutes: Int) { sharedPrefs.edit().putInt("auto_sync_start", minutes).apply() }
+
+    fun getAutoSyncEndMinutes(): Int = sharedPrefs.getInt("auto_sync_end", 900)
+    fun saveAutoSyncEndMinutes(minutes: Int) { sharedPrefs.edit().putInt("auto_sync_end", minutes).apply() }
 
     suspend fun isDatabaseEmpty(): Boolean {
         return withContext(Dispatchers.IO) {
@@ -164,6 +201,10 @@ class PortfolioRepository(
                     GoogleSheetsClient.e5Value?.let { saveE5Value(it) }
                     GoogleSheetsClient.o5Value?.let { saveO5Value(it) }
 
+                    // Save NEPSE status and datetime from A1, A2
+                    saveNepseStatus(GoogleSheetsClient.nepseStatus)
+                    saveNepseDateTime(GoogleSheetsClient.nepseDateTime)
+
                     val format = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
                     saveLastSyncTime(format.format(Date()))
                     Log.d("Repository", "Sync successful! Saved records.")
@@ -201,6 +242,30 @@ class PortfolioRepository(
             Log.d("Repository", "Triggered widget broadcast with ${ids.size} widget IDs")
         } catch (e: Exception) {
             Log.e("Repository", "Failed to broadcast widget update", e)
+        }
+    }
+
+    fun getGeminiApiKey(): String? {
+        return sharedPrefs.getString("gemini_api_key", null)
+    }
+
+    fun saveGeminiApiKey(key: String?) {
+        if (key.isNullOrBlank()) {
+            sharedPrefs.edit().remove("gemini_api_key").apply()
+        } else {
+            sharedPrefs.edit().putString("gemini_api_key", key.trim()).apply()
+        }
+    }
+
+    suspend fun insertChatMessage(message: ChatMessageEntity) {
+        withContext(Dispatchers.IO) {
+            portfolioDao.insertChatMessage(message)
+        }
+    }
+
+    suspend fun clearChatMessages() {
+        withContext(Dispatchers.IO) {
+            portfolioDao.clearChatMessages()
         }
     }
 }

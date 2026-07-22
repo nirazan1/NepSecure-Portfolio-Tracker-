@@ -45,3 +45,11 @@ data class WatchStock(
     val currentPrice: Double,
     val notes: String
 )
+
+@Entity(tableName = "chat_messages")
+data class ChatMessageEntity(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val text: String,
+    val isUser: Boolean,
+    val timestamp: Long
+)

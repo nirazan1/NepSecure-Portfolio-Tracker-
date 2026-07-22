@@ -1,8 +1,1 @@
-{
-  "name": "NepSecure Portfolio Tracker",
-  "description": "Secure Stock Portfolio tracker with widget support, real-time Google Sheets syncing, and offline caching.",
-  "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}
+{"name":"NepSecure Portfolio Tracker","description":"Secure Stock Portfolio tracker with widget support, real-time Google Sheets syncing, and offline caching.","requestFramePermissions":[],"majorCapabilities":["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]}

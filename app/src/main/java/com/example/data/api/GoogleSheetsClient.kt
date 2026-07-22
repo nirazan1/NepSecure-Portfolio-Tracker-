@@ -14,6 +14,8 @@ object GoogleSheetsClient {
 
     var e5Value: Double? = null
     var o5Value: Double? = null
+    var nepseStatus: String? = null
+    var nepseDateTime: String? = null
 
     private fun parseCsvRow(row: String): List<String> {
         val result = mutableListOf<String>()
@@ -262,6 +264,13 @@ object GoogleSheetsClient {
         if (rows.isEmpty()) return emptyList()
 
         // Extract E5 (row index 4, col index 4) and O5 (row index 4, col index 14)
+        // Extract A1 (NEPSE status) and A2 (date/time) from the sheet
+        val a1Raw = rows.getOrNull(0)?.getOrNull(0)?.replace("\"", "")?.trim()
+        val a2Raw = rows.getOrNull(1)?.getOrNull(0)?.replace("\"", "")?.trim()
+        nepseStatus = if (!a1Raw.isNullOrBlank()) a1Raw else null
+        nepseDateTime = if (!a2Raw.isNullOrBlank()) a2Raw else null
+        Log.d("SheetsClient", "Extracted A1 (status): $nepseStatus, A2 (datetime): $nepseDateTime")
+
         val row5 = rows.getOrNull(4)
         val e5Raw = row5?.getOrNull(4)
         val o5Raw = row5?.getOrNull(14)
